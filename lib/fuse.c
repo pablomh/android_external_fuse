@@ -4565,10 +4565,31 @@ static int node_table_init(struct node_table *t)
 	return 0;
 }
 
+#if defined(__ANDROID__)
+static void thread_exit_handler(int sig)
+{
+	pthread_exit(0);
+}
+#endif
+
 static void *fuse_prune_nodes(void *fuse)
 {
 	struct fuse *f = fuse;
 	int sleep_time;
+
+#if defined(__ANDROID__)
+	struct sigaction actions;
+	memset(&actions, 0, sizeof(actions));
+	sigemptyset(&actions.sa_mask);
+	actions.sa_flags = 0;
+	actions.sa_handler = thread_exit_handler;
+	sigaction(SIGUSR1, &actions, NULL);
+
+	sigset_t setusr1;
+	sigemptyset(&setusr1);
+	sigaddset(&setusr1, SIGUSR1);
+	pthread_sigmask(SIG_BLOCK, &setusr1, NULL);
+#endif
 
 	while(1) {
 		sleep_time = fuse_clean_cache(f);
@@ -4589,7 +4610,11 @@ void fuse_stop_cleanup_thread(struct fuse *f)
 {
 	if (lru_enabled(f)) {
 		pthread_mutex_lock(&f->lock);
+#if defined(__ANDROID__)
+		pthread_kill(f->prune_thread, SIGUSR1);
+#else
 		pthread_cancel(f->prune_thread);
+#endif
 		pthread_mutex_unlock(&f->lock);
 		pthread_join(f->prune_thread, NULL);
 	}
