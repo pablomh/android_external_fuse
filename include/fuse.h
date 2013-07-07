@@ -22,6 +22,9 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#if defined(__ANDROID__)
+#include <pthread.h>
+#endif
 #include <sys/statvfs.h>
 #include <sys/uio.h>
 
