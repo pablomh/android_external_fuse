@@ -31,7 +31,9 @@
 #include <limits.h>
 #include <errno.h>
 #include <signal.h>
+#ifdef USE_MODULES
 #include <dlfcn.h>
+#endif /* USE_MODULES */
 #include <assert.h>
 #include <poll.h>
 #include <sys/param.h>
@@ -59,15 +61,19 @@
 
 struct fuse_fs {
 	struct fuse_operations op;
+#ifdef USE_MODULES
 	struct fuse_module *m;
+#endif /* USE_MODULES */
 	void *user_data;
 	int debug;
 };
 
+#ifdef USE_MODULES
 struct fusemod_so {
 	void *handle;
 	int ctr;
 };
+#endif /* USE_MODULES */
 
 struct lock_queue_element {
 	struct lock_queue_element *next;
@@ -196,13 +202,17 @@ struct fuse_context_i {
 	fuse_req_t req;
 };
 
+#ifdef USE_MODULES
 /* Defined by FUSE_REGISTER_MODULE() in lib/modules/subdir.c and iconv.c.  */
 extern fuse_module_factory_t fuse_module_subdir_factory;
 extern fuse_module_factory_t fuse_module_iconv_factory;
+#endif /* USE_MODULES */
 
 static pthread_key_t fuse_context_key;
 static pthread_mutex_t fuse_context_lock = PTHREAD_MUTEX_INITIALIZER;
 static int fuse_context_ref;
+
+#ifdef USE_MODULES
 static struct fuse_module *fuse_modules = NULL;
 
 static int fuse_register_module(const char *name,
@@ -332,6 +342,7 @@ static void fuse_put_module(struct fuse_module *m)
 	}
 	pthread_mutex_unlock(&fuse_context_lock);
 }
+#endif /* USE_MODULES */
 
 static void init_list_head(struct list_head *list)
 {
@@ -2518,8 +2529,10 @@ void fuse_fs_destroy(struct fuse_fs *fs)
 	fuse_get_context()->private_data = fs->user_data;
 	if (fs->op.destroy)
 		fs->op.destroy(fs->user_data);
+#ifdef USE_MODULES
 	if (fs->m)
 		fuse_put_module(fs->m);
+#endif /* USE_MODULES */
 	free(fs);
 }
 
@@ -4422,7 +4435,9 @@ static const struct fuse_opt fuse_lib_opts[] = {
 	FUSE_LIB_OPT("negative_timeout=%lf",  negative_timeout, 0),
 	FUSE_LIB_OPT("noforget",              remember, -1),
 	FUSE_LIB_OPT("remember=%u",           remember, 0),
+#ifdef USE_MODULES
 	FUSE_LIB_OPT("modules=%s",	      modules, 0),
+#endif /* USE_MODULES */
 	FUSE_OPT_END
 };
 
@@ -4442,9 +4457,13 @@ static void fuse_lib_help(void)
 "    -o ac_attr_timeout=T   auto cache timeout for attributes (attr_timeout)\n"
 "    -o noforget            never forget cached inodes\n"
 "    -o remember=T          remember cached inodes for T seconds (0s)\n"
-"    -o modules=M1[:M2...]  names of modules to push onto filesystem stack\n");
+#ifdef USE_MODULES
+"    -o modules=M1[:M2...]  names of modules to push onto filesystem stack\n"
+#endif /* USE_MODULES */
+	    );
 }
 
+#ifdef USE_MODULES
 static void fuse_lib_help_modules(void)
 {
 	struct fuse_module *m;
@@ -4464,6 +4483,7 @@ static void fuse_lib_help_modules(void)
 	}
 	pthread_mutex_unlock(&fuse_context_lock);
 }
+#endif /* USE_MODULES */
 
 static int fuse_lib_opt_proc(void *data, const char *arg, int key,
 			     struct fuse_args *outargs)
@@ -4508,7 +4528,7 @@ static void fuse_restore_intr_signal(int signum)
 	sigaction(signum, &sa, NULL);
 }
 
-
+#ifdef USE_MODULES
 static int fuse_push_module(struct fuse *f, const char *module,
 			    struct fuse_args *args)
 {
@@ -4528,6 +4548,7 @@ static int fuse_push_module(struct fuse *f, const char *module,
 	f->fs = newfs;
 	return 0;
 }
+#endif /* USE_MODULES */
 
 struct fuse_fs *fuse_fs_new(const struct fuse_operations *op, size_t op_size,
 			    void *user_data)
@@ -4652,6 +4673,7 @@ struct fuse *fuse_new(struct fuse_args *args,
 		   have been loaded */
 	}
 
+#ifdef USE_MODULES
 	pthread_mutex_lock(&fuse_context_lock);
 	static int builtin_modules_registered = 0;
 	/* Have the builtin modules already been registered? */
@@ -4662,6 +4684,7 @@ struct fuse *fuse_new(struct fuse_args *args,
 		builtin_modules_registered= 1;
 	}
 	pthread_mutex_unlock(&fuse_context_lock);
+#endif /* USE_MODULES */
 
 	if (fuse_create_context_key() == -1)
 		goto out_free;
@@ -4683,6 +4706,7 @@ struct fuse *fuse_new(struct fuse_args *args,
 	init_list_head(&f->full_slabs);
 	init_list_head(&f->lru_table);
 
+#ifdef USE_MODULES
 	if (f->conf.modules) {
 		char *module;
 		char *next;
@@ -4697,9 +4721,12 @@ struct fuse *fuse_new(struct fuse_args *args,
 				goto out_free_fs;
 		}
 	}
+#endif /* USE_MODULES */
 
 	if(f->conf.show_help) {
+#ifdef USE_MODULES
 		fuse_lib_help_modules();
+#endif /* USE_MODULES */
 		goto out_free_fs;
 	}
 
@@ -4768,10 +4795,14 @@ out_free_name_table:
 out_free_session:
 	fuse_session_destroy(f->se);
 out_free_fs:
+#ifdef USE_MODULES
 	if (f->fs->m)
 		fuse_put_module(f->fs->m);
+#endif /* USE_MODULES */
 	free(f->fs);
+#ifdef USE_MODULES
 	free(f->conf.modules);
+#endif /* USE_MODULES */
 out_delete_context_key:
 	fuse_delete_context_key();
 out_free:
@@ -4822,7 +4853,9 @@ void fuse_destroy(struct fuse *f)
 	free(f->name_table.array);
 	pthread_mutex_destroy(&f->lock);
 	fuse_session_destroy(f->se);
+#ifdef USE_MODULES
 	free(f->conf.modules);
+#endif /* USE_MODULES */
 	free(f);
 	fuse_delete_context_key();
 }
